@@ -1,0 +1,26 @@
+[project]
+name = "company-info-mcp"
+version = "1.0.0"
+description = "MCP Server for Korean Company Information using DART, G2B, and KIPRIS APIs (Free Version)"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastmcp",
+    "uvicorn",
+    "pydantic",
+    "python-dotenv",
+    "requests",
+    "cachetools",
+    "fastapi"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
