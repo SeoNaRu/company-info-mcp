@@ -96,19 +96,22 @@ class ShareholdersRequest(BaseModel):
 
 
 # 실제 구현 함수들
-async def search_company_impl(req: CompanySearchRequest):
+async def search_company_impl(req: CompanySearchRequest, arguments: Optional[dict] = None):
     """기업 검색 구현"""
     try:
-        return await asyncio.to_thread(search_company, req.query)
+        if arguments is None:
+            arguments = {}
+        return await asyncio.to_thread(search_company, req.query, arguments)
     except Exception as e:
         return {"error": f"기업 검색 중 오류가 발생했습니다: {str(e)}"}
 
 
-async def get_financial_statement_impl(req: FinancialStatementRequest):
+async def get_financial_statement_impl(req: FinancialStatementRequest, arguments: Optional[dict] = None):
     """재무제표 조회 구현"""
     try:
         # arguments를 전달하여 API 키 등 크레덴셜 접근 가능하도록 함
-        arguments = {}
+        if arguments is None:
+            arguments = {}
         return await asyncio.to_thread(
             get_financial_statement, 
             req.corp_code,
@@ -122,37 +125,44 @@ async def get_financial_statement_impl(req: FinancialStatementRequest):
         return {"error": f"재무제표 조회 중 오류가 발생했습니다: {str(e)}"}
 
 
-async def get_public_disclosure_impl(req: PublicDisclosureRequest):
+async def get_public_disclosure_impl(req: PublicDisclosureRequest, arguments: Optional[dict] = None):
     """공시정보 조회 구현"""
     try:
+        if arguments is None:
+            arguments = {}
         return await asyncio.to_thread(
             get_public_disclosure,
             req.corp_code,
             req.bgn_de,
             req.end_de,
             req.page_no,
-            req.page_count
+            req.page_count,
+            arguments
         )
     except Exception as e:
         return {"error": f"공시정보 조회 중 오류가 발생했습니다: {str(e)}"}
 
 
-async def analyze_financial_trend_impl(req: FinancialTrendRequest):
+async def analyze_financial_trend_impl(req: FinancialTrendRequest, arguments: Optional[dict] = None):
     """재무 추이 분석 구현"""
     try:
+        if arguments is None:
+            arguments = {}
         return await asyncio.to_thread(
             analyze_financial_trend,
             req.corp_code,
-            req.years
+            req.years,
+            arguments
         )
     except Exception as e:
         return {"error": f"재무 추이 분석 중 오류가 발생했습니다: {str(e)}"}
 
 
-async def get_company_overview_impl(req: CompanyOverviewRequest):
+async def get_company_overview_impl(req: CompanyOverviewRequest, arguments: Optional[dict] = None):
     """기업 기본정보 조회 구현"""
     try:
-        arguments = {}
+        if arguments is None:
+            arguments = {}
         return await asyncio.to_thread(
             get_company_overview,
             req.corp_code,
@@ -163,10 +173,11 @@ async def get_company_overview_impl(req: CompanyOverviewRequest):
         return {"error": f"기업정보 조회 중 오류가 발생했습니다: {str(e)}"}
 
 
-async def get_major_report_impl(req: MajorReportRequest):
+async def get_major_report_impl(req: MajorReportRequest, arguments: Optional[dict] = None):
     """주요사항보고서 조회 구현"""
     try:
-        arguments = {}
+        if arguments is None:
+            arguments = {}
         return await asyncio.to_thread(
             get_major_report,
             req.corp_code,
@@ -179,10 +190,11 @@ async def get_major_report_impl(req: MajorReportRequest):
         return {"error": f"주요사항보고서 조회 중 오류가 발생했습니다: {str(e)}"}
 
 
-async def download_disclosure_document_impl(req: DocumentDownloadRequest):
+async def download_disclosure_document_impl(req: DocumentDownloadRequest, arguments: Optional[dict] = None):
     """공시원문 다운로드 구현"""
     try:
-        arguments = {}
+        if arguments is None:
+            arguments = {}
         return await asyncio.to_thread(
             download_disclosure_document,
             req.rcept_no,
@@ -193,10 +205,11 @@ async def download_disclosure_document_impl(req: DocumentDownloadRequest):
         return {"error": f"공시원문 다운로드 중 오류가 발생했습니다: {str(e)}"}
 
 
-async def get_executives_impl(req: ExecutivesRequest):
+async def get_executives_impl(req: ExecutivesRequest, arguments: Optional[dict] = None):
     """임원정보 조회 구현"""
     try:
-        arguments = {}
+        if arguments is None:
+            arguments = {}
         return await asyncio.to_thread(
             get_executives,
             req.corp_code,
@@ -207,10 +220,11 @@ async def get_executives_impl(req: ExecutivesRequest):
         return {"error": f"임원정보 조회 중 오류가 발생했습니다: {str(e)}"}
 
 
-async def get_shareholders_impl(req: ShareholdersRequest):
+async def get_shareholders_impl(req: ShareholdersRequest, arguments: Optional[dict] = None):
     """지분보고서 조회 구현"""
     try:
-        arguments = {}
+        if arguments is None:
+            arguments = {}
         return await asyncio.to_thread(
             get_shareholders,
             req.corp_code,
@@ -536,18 +550,19 @@ async def health(arguments: Optional[dict] = None):
 
 
 @mcp.tool()
-async def search_company_tool(query: str):
+async def search_company_tool(query: str, arguments: Optional[dict] = None):
     """
     기업을 회사명으로 검색합니다.
     
     Args:
         query: 검색할 회사명 (예: '삼성전자', '네이버')
+        arguments: 도구 호출 인자 (env 필드 포함 가능)
     
     Returns:
         검색된 기업 목록 (기업 고유번호 포함)
     """
     req = CompanySearchRequest(query=query)
-    return await search_company_impl(req)
+    return await search_company_impl(req, arguments)
 
 
 @mcp.tool()
@@ -555,7 +570,8 @@ async def get_financial_statement_tool(
     corp_code: Optional[str] = None,
     company_name: Optional[str] = None,
     bsns_year: Optional[str] = None,
-    reprt_code: str = "11011"
+    reprt_code: str = "11011",
+    arguments: Optional[dict] = None
 ):
     """
     기업의 재무제표를 조회합니다.
@@ -565,6 +581,7 @@ async def get_financial_statement_tool(
         company_name: 회사명 (corp_code가 없을 경우 사용, 예: '삼성전자', '카카오')
         bsns_year: 사업연도 (YYYY 형식, 기본값: 최근 연도)
         reprt_code: 보고서 코드 (11011: 사업보고서, 11013: 분기보고서)
+        arguments: 도구 호출 인자 (env 필드 포함 가능)
     
     Returns:
         재무제표 정보 (손익계산서, 재무상태표, 현금흐름표)
@@ -575,7 +592,7 @@ async def get_financial_statement_tool(
         bsns_year=bsns_year,
         reprt_code=reprt_code
     )
-    return await get_financial_statement_impl(req)
+    return await get_financial_statement_impl(req, arguments)
 
 
 @mcp.tool()
@@ -584,7 +601,8 @@ async def get_public_disclosure_tool(
     bgn_de: Optional[str] = None,
     end_de: Optional[str] = None,
     page_no: int = 1,
-    page_count: int = 10
+    page_count: int = 10,
+    arguments: Optional[dict] = None
 ):
     """
     기업의 공시정보를 조회합니다.
@@ -595,6 +613,7 @@ async def get_public_disclosure_tool(
         end_de: 종료일 (YYYYMMDD 형식, 기본값: 오늘)
         page_no: 페이지 번호
         page_count: 페이지당 건수
+        arguments: 도구 호출 인자 (env 필드 포함 가능)
     
     Returns:
         공시정보 목록
@@ -606,13 +625,14 @@ async def get_public_disclosure_tool(
         page_no=page_no,
         page_count=page_count
     )
-    return await get_public_disclosure_impl(req)
+    return await get_public_disclosure_impl(req, arguments)
 
 
 @mcp.tool()
 async def analyze_financial_trend_tool(
     corp_code: str,
-    years: int = 5
+    years: int = 5,
+    arguments: Optional[dict] = None
 ):
     """
     기업의 재무 추이를 분석합니다. (최근 N년)
@@ -620,18 +640,20 @@ async def analyze_financial_trend_tool(
     Args:
         corp_code: 기업 고유번호
         years: 분석할 연수 (기본값: 5, 최대: 10)
+        arguments: 도구 호출 인자 (env 필드 포함 가능)
     
     Returns:
         재무 추이 분석 결과 (최근 N년 재무제표 데이터)
     """
     req = FinancialTrendRequest(corp_code=corp_code, years=years)
-    return await analyze_financial_trend_impl(req)
+    return await analyze_financial_trend_impl(req, arguments)
 
 
 @mcp.tool()
 async def get_company_overview_tool(
     corp_code: Optional[str] = None,
-    company_name: Optional[str] = None
+    company_name: Optional[str] = None,
+    arguments: Optional[dict] = None
 ):
     """
     기업의 기본정보를 조회합니다.
@@ -639,6 +661,7 @@ async def get_company_overview_tool(
     Args:
         corp_code: 기업 고유번호 (corp_code 또는 company_name 중 하나 필수)
         company_name: 회사명 (corp_code가 없을 경우 사용, 예: '삼성전자', '카카오')
+        arguments: 도구 호출 인자 (env 필드 포함 가능)
     
     Returns:
         기업 기본정보 (회사명, 대표자명, 설립일, 본사주소 등)
@@ -647,7 +670,7 @@ async def get_company_overview_tool(
         corp_code=corp_code,
         company_name=company_name
     )
-    return await get_company_overview_impl(req)
+    return await get_company_overview_impl(req, arguments)
 
 
 @mcp.tool()
@@ -655,7 +678,8 @@ async def get_major_report_tool(
     corp_code: Optional[str] = None,
     company_name: Optional[str] = None,
     bgn_de: Optional[str] = None,
-    end_de: Optional[str] = None
+    end_de: Optional[str] = None,
+    arguments: Optional[dict] = None
 ):
     """
     주요사항보고서를 조회합니다.
@@ -665,6 +689,7 @@ async def get_major_report_tool(
         company_name: 회사명 (corp_code가 없을 경우 사용)
         bgn_de: 시작일 (YYYYMMDD 형식, 기본값: 최근 1개월)
         end_de: 종료일 (YYYYMMDD 형식, 기본값: 오늘)
+        arguments: 도구 호출 인자 (env 필드 포함 가능)
     
     Returns:
         주요사항보고서 목록
@@ -675,13 +700,14 @@ async def get_major_report_tool(
         bgn_de=bgn_de,
         end_de=end_de
     )
-    return await get_major_report_impl(req)
+    return await get_major_report_impl(req, arguments)
 
 
 @mcp.tool()
 async def download_disclosure_document_tool(
     rcept_no: str,
-    file_format: str = "xml"
+    file_format: str = "xml",
+    arguments: Optional[dict] = None
 ):
     """
     공시원문을 다운로드합니다.
@@ -689,6 +715,7 @@ async def download_disclosure_document_tool(
     Args:
         rcept_no: 접수번호 (공시정보에서 얻을 수 있음)
         file_format: 파일 형식 ("xml" 또는 "pdf", 기본값: "xml")
+        arguments: 도구 호출 인자 (env 필드 포함 가능)
     
     Returns:
         공시원문 데이터 (XML은 파싱된 데이터 포함, PDF는 base64 인코딩)
@@ -697,13 +724,14 @@ async def download_disclosure_document_tool(
         rcept_no=rcept_no,
         file_format=file_format
     )
-    return await download_disclosure_document_impl(req)
+    return await download_disclosure_document_impl(req, arguments)
 
 
 @mcp.tool()
 async def get_executives_tool(
     corp_code: Optional[str] = None,
-    company_name: Optional[str] = None
+    company_name: Optional[str] = None,
+    arguments: Optional[dict] = None
 ):
     """
     기업의 임원정보를 조회합니다.
@@ -711,6 +739,7 @@ async def get_executives_tool(
     Args:
         corp_code: 기업 고유번호 (corp_code 또는 company_name 중 하나 필수)
         company_name: 회사명 (corp_code가 없을 경우 사용, 예: '삼성전자', '카카오')
+        arguments: 도구 호출 인자 (env 필드 포함 가능)
     
     Returns:
         임원정보 (임원명, 직책, 보수 등)
@@ -719,7 +748,7 @@ async def get_executives_tool(
         corp_code=corp_code,
         company_name=company_name
     )
-    return await get_executives_impl(req)
+    return await get_executives_impl(req, arguments)
 
 
 @mcp.tool()
@@ -727,7 +756,8 @@ async def get_shareholders_tool(
     corp_code: Optional[str] = None,
     company_name: Optional[str] = None,
     bsns_year: Optional[str] = None,
-    reprt_code: str = "11011"
+    reprt_code: str = "11011",
+    arguments: Optional[dict] = None
 ):
     """
     지분보고서를 조회합니다.
@@ -737,6 +767,7 @@ async def get_shareholders_tool(
         company_name: 회사명 (corp_code가 없을 경우 사용)
         bsns_year: 사업연도 (YYYY 형식, 기본값: 최근 연도)
         reprt_code: 보고서 코드 (11011: 사업보고서, 11013: 분기보고서)
+        arguments: 도구 호출 인자 (env 필드 포함 가능)
     
     Returns:
         지분보고서 (주주명, 보유지분, 비율 등)
@@ -747,7 +778,7 @@ async def get_shareholders_tool(
         bsns_year=bsns_year,
         reprt_code=reprt_code
     )
-    return await get_shareholders_impl(req)
+    return await get_shareholders_impl(req, arguments)
 
 
 async def main():
