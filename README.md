@@ -17,10 +17,8 @@ AI 에이전트(Claude Desktop, Cursor 등)가 실시간으로 한국 상장기�
 | **재무제표 조회** | 손익계산서, 재무상태표, 현금흐름표 |
 | **재무 추이 분석** | 최근 5-10년 재무제표 추이 분석 |
 | **공시정보 조회** | 최근 공시 목록 및 상세 내용 |
-| **주요사항보고서** | 임원변경, 자본금변경 등 주요사항 조회 |
 | **임원정보 조회** | 임원명, 직책, 보수 등 임원정보 조회 |
 | **지분보고서** | 주주명, 보유지분, 비율 등 지분구조 조회 |
-| **공시원문 다운로드** | 공시보고서 원문 XML/PDF 다운로드 및 파싱 |
 
 ### 🚀 성능 최적화
 
@@ -112,14 +110,7 @@ python -m src.main
 #### HTTP 서버 모드
 
 ```bash
-HTTP_MODE=1 python src/main.py
-```
-
-또는
-
-```bash
-export HTTP_MODE=1
-python src/main.py
+HTTP_MODE=1 python -m src.main
 ```
 
 HTTP 서버는 기본적으로 `http://localhost:8097`에서 실행됩니다.
@@ -261,42 +252,20 @@ Claude Desktop 재시작 후 Claude에게 질문:
 
 ---
 
-### 7. `get_major_report_tool`
-주요사항보고서 조회
-
-**파라미터**:
-- `corp_code` (string, 선택): 기업 고유번호
-- `company_name` (string, 선택): 회사명
-- `bgn_de` (string, 선택): 시작일 (YYYYMMDD 형식, 기본값: 최근 1개월)
-- `end_de` (string, 선택): 종료일 (YYYYMMDD 형식, 기본값: 오늘)
-
-**반환**: 주요사항보고서 목록 (임원변경, 자본금변경 등)
-
----
-
-### 8. `download_disclosure_document_tool`
-공시원문 다운로드
-
-**파라미터**:
-- `rcept_no` (string, 필수): 접수번호 (공시정보에서 얻을 수 있음)
-- `file_format` (string, 선택): 파일 형식 ("xml" 또는 "pdf", 기본값: "xml")
-
-**반환**: 공시원문 데이터 (XML은 파싱된 데이터 포함, PDF는 base64 인코딩)
-
----
-
-### 9. `get_executives_tool`
+### 7. `get_executives_tool`
 기업의 임원정보 조회
 
 **파라미터**:
 - `corp_code` (string, 선택): 기업 고유번호
 - `company_name` (string, 선택): 회사명 (corp_code 또는 company_name 중 하나 필수)
+- `bsns_year` (string, 선택): 사업연도 (YYYY 형식, 기본값: 최근 연도)
+- `reprt_code` (string, 선택): 보고서 코드 (11011: 사업보고서, 기본값: 11011)
 
 **반환**: 임원정보 목록 (임원명, 직책, 보수 등)
 
 ---
 
-### 10. `get_shareholders_tool`
+### 8. `get_shareholders_tool`
 지분보고서 조회
 
 **파라미터**:
@@ -358,19 +327,6 @@ Claude Desktop 재시작 후 Claude에게 질문:
 2. 매출, 영업이익, 순이익 추이 비교
 3. 성장률 계산 및 비교표 생성
 4. `get_shareholders_tool`로 지분구조 비교
-
----
-
-### 예시 5: 공시 원문 상세 분석
-
-**사용자**: "삼성전자 최근 공시 중 중요한 것 하나 상세 분석해줘"
-
-**AI 에이전트가 수행하는 작업**:
-1. `get_public_disclosure_tool(company_name="삼성전자", page_count=10)` - 최근 공시 목록
-2. 공시 제목 분석하여 중요 공시 선택
-3. `download_disclosure_document_tool(rcept_no="...", file_format="xml")` - 공시원문 다운로드
-4. XML 파싱된 데이터 분석
-5. 핵심 내용 요약 및 의견 제시
 
 ---
 
@@ -453,7 +409,6 @@ company-info-mcp/
 ├── requirements.txt   # Python 의존성
 ├── pyproject.toml     # 프로젝트 설정
 ├── Dockerfile         # Docker 이미지 빌드 파일
-├── DEVELOPMENT_GUIDE.md  # 개발 가이드 (DART API 그룹별 기능)
 └── README.md          # 프로젝트 문서 (이 파일)
 ```
 
@@ -503,11 +458,7 @@ company-info-mcp/
 
 ---
 
-## 📚 개발 가이드
-
-DART API의 각 그룹별 기능과 추가 개발 방법은 [DEVELOPMENT_GUIDE.md](./DEVELOPMENT_GUIDE.md)를 참고하세요.
-
-### 구현 상태
+## 📚 구현 상태
 
 - **DS001**: 공시정보 조회 (✅ 구현 완료)
 - **DS002**: 재무정보 조회 (✅ 구현 완료)

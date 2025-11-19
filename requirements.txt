@@ -5,4 +5,5 @@ python-dotenv
 requests
 cachetools
 fastapi
+google-generativeai>=0.8.0
 

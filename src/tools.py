@@ -29,8 +29,6 @@ company_cache = TTLCache(maxsize=100, ttl=86400)  # 24시간 유지
 financial_cache = TTLCache(maxsize=50, ttl=86400)
 disclosure_cache = TTLCache(maxsize=100, ttl=3600)  # 1시간
 company_overview_cache = TTLCache(maxsize=100, ttl=86400 * 7)  # 7일 (기본정보는 자주 변하지 않음)
-major_report_cache = TTLCache(maxsize=100, ttl=86400)  # 24시간
-document_cache = TTLCache(maxsize=50, ttl=86400)  # 24시간
 executives_cache = TTLCache(maxsize=100, ttl=86400 * 7)  # 7일 (임원정보는 자주 변하지 않음)
 shareholders_cache = TTLCache(maxsize=100, ttl=86400)  # 24시간
 
@@ -560,233 +558,17 @@ def get_company_overview(corp_code: Optional[str] = None, company_name: Optional
         return {"error": f"기업정보 조회 중 오류 발생: {str(e)}"}
 
 
-def get_major_report(corp_code: Optional[str] = None, company_name: Optional[str] = None,
-                     bgn_de: Optional[str] = None, end_de: Optional[str] = None,
-                     arguments: Optional[dict] = None) -> Dict:
-    """
-    주요사항보고서를 조회합니다. (DART API - DS005)
-    
-    Args:
-        corp_code: 기업 고유번호 (corp_code 또는 company_name 중 하나 필수)
-        company_name: 회사명 (corp_code가 없을 경우 사용)
-        bgn_de: 시작일 (YYYYMMDD 형식, 기본값: 최근 1개월)
-        end_de: 종료일 (YYYYMMDD 형식, 기본값: 오늘)
-        arguments: 추가 인자
-        
-    Returns:
-        주요사항보고서 딕셔너리
-    """
-    # corp_code가 없으면 company_name으로 검색
-    if not corp_code and company_name:
-        logger.debug("corp_code not provided, searching by company_name: %s", company_name)
-        search_result = search_company(company_name, arguments)
-        
-        if "error" in search_result:
-            return {"error": f"기업 검색 실패: {search_result['error']}"}
-        
-        companies = search_result.get("companies", [])
-        if not companies:
-            return {"error": f"'{company_name}'에 해당하는 기업을 찾을 수 없습니다."}
-        
-        # 상장기업 우선 선택
-        selected_company = None
-        for company in companies:
-            stock_code = company.get("stock_code", "").strip()
-            if stock_code and stock_code != " ":
-                selected_company = company
-                break
-        
-        if not selected_company:
-            selected_company = companies[0]
-        
-        corp_code = selected_company.get("corp_code")
-        found_name = selected_company.get("corp_name", "")
-        logger.debug("Found company: %s (corp_code: %s)", found_name, corp_code)
-        
-        if not corp_code:
-            return {"error": f"'{company_name}'의 corp_code를 찾을 수 없습니다."}
-    
-    if not corp_code:
-        return {"error": "corp_code 또는 company_name 중 하나는 필수입니다."}
-    
-    # corp_code 정규화
-    corp_code = str(corp_code).strip()
-    if corp_code.isdigit():
-        corp_code = corp_code.zfill(8)
-    
-    # 기본값 설정
-    if not end_de:
-        end_de = datetime.now().strftime("%Y%m%d")
-    if not bgn_de:
-        bgn_de = (datetime.now() - timedelta(days=30)).strftime("%Y%m%d")
-    
-    logger.debug("get_major_report called | corp_code=%s bgn_de=%s end_de=%s", corp_code, bgn_de, end_de)
-    
-    # 캐시 확인
-    cache_key = (corp_code, bgn_de, end_de)
-    if cache_key in major_report_cache:
-        logger.debug("Cache hit for major report | corp_code=%s", corp_code)
-        return major_report_cache[cache_key]
-    
-    credentials = get_credentials(arguments)
-    api_key = credentials["DART_API_KEY"]
-    
-    if not api_key:
-        return {"error": "API 키가 설정되지 않았습니다."}
-    
-    # DART API: 주요사항보고서 조회
-    api_url = f"{DART_API_URL}/majorReport.json"
-    
-    params = {
-        "crtfc_key": api_key,
-        "corp_code": corp_code,
-        "bgn_de": bgn_de,
-        "end_de": end_de,
-    }
-    
-    try:
-        response = requests.get(api_url, params=params, timeout=30)
-        response.raise_for_status()
-        
-        data = response.json()
-        
-        if data.get("status") == "000":
-            result = {
-                "corp_code": corp_code,
-                "bgn_de": bgn_de,
-                "end_de": end_de,
-                "reports": data.get("list", [])
-            }
-            logger.debug("Major report retrieved | corp_code=%s items=%d", corp_code, len(data.get("list", [])))
-            # 캐시에 저장
-            major_report_cache[cache_key] = result
-            return result
-        else:
-            return {"error": f"DART API 오류: {data.get('message', '알 수 없는 오류')}"}
-        
-    except requests.exceptions.RequestException as e:
-        logger.exception("Major report API request failed: %s", str(e))
-        return {"error": f"API 요청 실패: {str(e)}"}
-    except Exception as e:
-        logger.exception("Major report error: %s", str(e))
-        return {"error": f"주요사항보고서 조회 중 오류 발생: {str(e)}"}
-
-
-def download_disclosure_document(rcept_no: str, file_format: str = "xml", arguments: Optional[dict] = None) -> Dict:
-    """
-    공시원문을 다운로드합니다. (DART API - DS004)
-    
-    Args:
-        rcept_no: 접수번호 (공시정보에서 얻을 수 있음)
-        file_format: 파일 형식 ("xml" 또는 "pdf", 기본값: "xml")
-        arguments: 추가 인자
-        
-    Returns:
-        공시원문 데이터 딕셔너리
-    """
-    logger.debug("download_disclosure_document called | rcept_no=%s format=%s", rcept_no, file_format)
-    
-    if file_format not in ["xml", "pdf"]:
-        return {"error": "file_format은 'xml' 또는 'pdf'만 가능합니다."}
-    
-    # 캐시 확인
-    cache_key = (rcept_no, file_format)
-    if cache_key in document_cache:
-        logger.debug("Cache hit for document | rcept_no=%s", rcept_no)
-        return document_cache[cache_key]
-    
-    credentials = get_credentials(arguments)
-    api_key = credentials["DART_API_KEY"]
-    
-    if not api_key:
-        return {"error": "API 키가 설정되지 않았습니다."}
-    
-    # DART API: 공시원문 다운로드
-    api_url = f"{DART_API_URL}/document.{file_format}"
-    
-    params = {
-        "crtfc_key": api_key,
-        "rcept_no": rcept_no,
-    }
-    
-    try:
-        response = requests.get(api_url, params=params, timeout=60)
-        response.raise_for_status()
-        
-        if file_format == "xml":
-            # XML 파싱
-            try:
-                import xml.etree.ElementTree as ET
-                root = ET.fromstring(response.content)
-                
-                # XML을 딕셔너리로 변환 (간단한 구조만)
-                def xml_to_dict(element):
-                    result = {}
-                    if element.text and element.text.strip():
-                        result["text"] = element.text.strip()
-                    if element.attrib:
-                        result["attributes"] = element.attrib
-                    for child in element:
-                        child_data = xml_to_dict(child)
-                        tag = child.tag
-                        if tag in result:
-                            if not isinstance(result[tag], list):
-                                result[tag] = [result[tag]]
-                            result[tag].append(child_data)
-                        else:
-                            result[tag] = child_data
-                    return result
-                
-                parsed_data = xml_to_dict(root)
-                
-                result = {
-                    "rcept_no": rcept_no,
-                    "format": file_format,
-                    "content": response.text,
-                    "parsed": parsed_data,
-                    "size": len(response.content)
-                }
-            except ET.ParseError as e:
-                logger.warning("XML parsing failed, returning raw content: %s", str(e))
-                result = {
-                    "rcept_no": rcept_no,
-                    "format": file_format,
-                    "content": response.text,
-                    "parsed": False,
-                    "parse_error": str(e),
-                    "size": len(response.content)
-                }
-        else:
-            # PDF는 base64 인코딩
-            import base64
-            result = {
-                "rcept_no": rcept_no,
-                "format": file_format,
-                "content_base64": base64.b64encode(response.content).decode('utf-8'),
-                "size": len(response.content),
-                "mime_type": "application/pdf"
-            }
-        
-        logger.debug("Document downloaded | rcept_no=%s format=%s size=%d", rcept_no, file_format, len(response.content))
-        # 캐시에 저장
-        document_cache[cache_key] = result
-        return result
-        
-    except requests.exceptions.RequestException as e:
-        logger.exception("Document download API request failed: %s", str(e))
-        return {"error": f"API 요청 실패: {str(e)}"}
-    except Exception as e:
-        logger.exception("Document download error: %s", str(e))
-        return {"error": f"공시원문 다운로드 중 오류 발생: {str(e)}"}
-
-
-def get_executives(corp_code: Optional[str] = None, company_name: Optional[str] = None, arguments: Optional[dict] = None) -> Dict:
+def get_executives(corp_code: Optional[str] = None, company_name: Optional[str] = None,
+                   bsns_year: Optional[str] = None, reprt_code: str = "11011",
+                   arguments: Optional[dict] = None) -> Dict:
     """
     기업의 임원정보를 조회합니다. (DART API - DS003)
     
     Args:
         corp_code: 기업 고유번호 (corp_code 또는 company_name 중 하나 필수)
         company_name: 회사명 (corp_code가 없을 경우 사용)
+        bsns_year: 사업연도 (YYYY 형식, 기본값: 최근 연도)
+        reprt_code: 보고서 코드 (11011: 사업보고서, 기본값: 11011)
         arguments: 추가 인자
         
     Returns:
@@ -830,10 +612,19 @@ def get_executives(corp_code: Optional[str] = None, company_name: Optional[str] 
     if corp_code.isdigit():
         corp_code = corp_code.zfill(8)
     
-    logger.debug("get_executives called | corp_code=%s", corp_code)
+    # bsns_year 기본값 설정 (최근 연도)
+    if not bsns_year:
+        current_year = datetime.now().year
+        # 3월 이전이면 전년도로 설정
+        if datetime.now().month < 3:
+            bsns_year = str(current_year - 1)
+        else:
+            bsns_year = str(current_year)
+    
+    logger.debug("get_executives called | corp_code=%s bsns_year=%s reprt_code=%s", corp_code, bsns_year, reprt_code)
     
     # 캐시 확인
-    cache_key = corp_code
+    cache_key = (corp_code, bsns_year, reprt_code)
     if cache_key in executives_cache:
         logger.debug("Cache hit for executives | corp_code=%s", corp_code)
         return executives_cache[cache_key]
@@ -850,6 +641,8 @@ def get_executives(corp_code: Optional[str] = None, company_name: Optional[str] 
     params = {
         "crtfc_key": api_key,
         "corp_code": corp_code,
+        "bsns_year": bsns_year,
+        "reprt_code": reprt_code,
     }
     
     try:
@@ -861,6 +654,8 @@ def get_executives(corp_code: Optional[str] = None, company_name: Optional[str] 
         if data.get("status") == "000":
             result = {
                 "corp_code": corp_code,
+                "bsns_year": bsns_year,
+                "reprt_code": reprt_code,
                 "executives": data.get("list", [])
             }
             logger.debug("Executives retrieved | corp_code=%s items=%d", corp_code, len(data.get("list", [])))
