@@ -372,6 +372,19 @@ async def call_tool_http(tool_name: str, request_data: dict):
 
     async def run_sync(func, *args, **kwargs):
         return await asyncio.to_thread(func, *args, **kwargs)
+    
+    # 공통 타입 변환 함수들
+    def convert_float_to_int(data: dict, keys: list):
+        """지정된 키의 float 값을 int로 변환"""
+        for key in keys:
+            if key in data and isinstance(data[key], float):
+                data[key] = int(data[key])
+    
+    def convert_to_str(data: dict, keys: list):
+        """지정된 키의 값을 문자열로 변환"""
+        for key in keys:
+            if key in data and data[key] is not None and not isinstance(data[key], str):
+                data[key] = str(data[key])
 
     try:
         # 크레덴셜 추출
@@ -407,6 +420,8 @@ async def call_tool_http(tool_name: str, request_data: dict):
             company_name = request_data.get("company_name")
             if not corp_code and not company_name:
                 return {"error": "Missing required parameter: corp_code or company_name"}
+            # 타입 변환: 문자열로 변환
+            convert_to_str(request_data, ["bsns_year", "reprt_code"])
             bsns_year = request_data.get("bsns_year")
             reprt_code = request_data.get("reprt_code", "11011")
             return await run_with_env(
@@ -421,6 +436,10 @@ async def call_tool_http(tool_name: str, request_data: dict):
             end_de = request_data.get("end_de")
             page_no = request_data.get("page_no", 1)
             page_count = request_data.get("page_count", 10)
+            if isinstance(page_no, float):
+                page_no = int(page_no)
+            if isinstance(page_count, float):
+                page_count = int(page_count)
             return await run_with_env(
                 run_sync(get_public_disclosure, corp_code, bgn_de, end_de, page_no, page_count, arguments=request_data)
             )
@@ -430,6 +449,8 @@ async def call_tool_http(tool_name: str, request_data: dict):
             if not corp_code:
                 return {"error": "Missing required parameter: corp_code"}
             years = request_data.get("years", 5)
+            if isinstance(years, float):
+                years = int(years)
             return await run_with_env(
                 run_sync(analyze_financial_trend, corp_code, years, arguments=request_data)
             )
@@ -448,6 +469,8 @@ async def call_tool_http(tool_name: str, request_data: dict):
             company_name = request_data.get("company_name")
             if not corp_code and not company_name:
                 return {"error": "Missing required parameter: corp_code or company_name"}
+            # 타입 변환: 문자열로 변환
+            convert_to_str(request_data, ["bsns_year", "reprt_code"])
             bsns_year = request_data.get("bsns_year")
             reprt_code = request_data.get("reprt_code", "11011")
             return await run_with_env(
@@ -459,6 +482,8 @@ async def call_tool_http(tool_name: str, request_data: dict):
             company_name = request_data.get("company_name")
             if not corp_code and not company_name:
                 return {"error": "Missing required parameter: corp_code or company_name"}
+            # 타입 변환: 문자열로 변환
+            convert_to_str(request_data, ["bsns_year", "reprt_code"])
             bsns_year = request_data.get("bsns_year")
             reprt_code = request_data.get("reprt_code", "11011")
             return await run_with_env(
@@ -483,11 +508,37 @@ async def search_company_tool(company_name: str):
     """
     기업을 회사명으로 검색합니다.
     
+    이 도구는 다른 도구들에서 company_name만 있고 corp_code가 없을 때 먼저 호출되어야 합니다.
+    검색 결과에서 corp_code를 얻은 후 다른 도구들(get_financial_statement_tool, get_company_overview_tool 등)을 호출할 수 있습니다.
+    
+    중요: 부분 일치 검색이 가능합니다. 예를 들어 "삼성"을 입력하면 "삼성전자", "삼성SDI" 등이 검색됩니다.
+    검색 결과가 여러 개일 경우, stock_code가 있는 상장기업을 우선 선택하거나 정확한 회사명과 일치하는 것을 선택해야 합니다.
+    
     Args:
-        company_name: 검색할 회사명 (예: '삼성전자', '네이버')
+        company_name: 검색할 회사명 (필수, 예: '삼성전자', '네이버', '카카오')
+                     부분 일치 검색이 가능합니다 (예: "삼성" 입력 시 "삼성전자", "삼성SDI" 등이 검색됨)
     
     Returns:
-        검색된 기업 목록 (기업 고유번호 포함)
+        검색 결과 딕셔너리:
+        {
+            "total": 검색된 기업 수 (int),
+            "companies": [
+                {
+                    "corp_code": "기업 고유번호 (8자리 문자열, 필수)",
+                    "corp_name": "회사명",
+                    "stock_code": "종목코드 (상장기업인 경우)",
+                    "modify_date": "수정일자"
+                },
+                ...
+            ]
+        }
+        또는 {"error": "오류 메시지"} 형식
+    
+    사용 예시:
+        - company_name="삼성전자" → 삼성전자 검색
+        - company_name="네이버" → 네이버 관련 기업 검색
+        - 검색 결과가 여러 개일 경우, stock_code가 있는 상장기업을 우선 선택하거나
+          정확한 회사명과 일치하는 것을 선택해야 함
     """
     req = CompanySearchRequest(company_name=company_name)
     return await search_company_impl(req, None)
@@ -503,14 +554,50 @@ async def get_financial_statement_tool(
     """
     기업의 재무제표를 조회합니다.
     
+    손익계산서, 재무상태표, 현금흐름표 등의 재무 정보를 조회합니다.
+    
+    중요: corp_code 또는 company_name 중 하나는 반드시 제공해야 합니다.
+    - corp_code가 제공되면: 바로 재무제표 조회
+    - company_name만 제공되면: 먼저 search_company_tool로 검색하여 corp_code를 찾은 후 조회
+    - 둘 다 제공되면: corp_code를 우선 사용
+    
     Args:
-        corp_code: 기업 고유번호 (corp_code 또는 company_name 중 하나 필수)
-        company_name: 회사명 (corp_code가 없을 경우 사용, 예: '삼성전자', '카카오')
-        bsns_year: 사업연도 (YYYY 형식, 기본값: 최근 연도)
-        reprt_code: 보고서 코드 (11011: 사업보고서, 11013: 분기보고서)
+        corp_code: 기업 고유번호 (8자리 문자열, 예: "00126380")
+                  corp_code 또는 company_name 중 하나 필수
+                  company_name이 제공되면 이 값은 무시됨
+        company_name: 회사명 (예: "삼성전자", "네이버", "카카오")
+                     corp_code가 없을 때 사용
+                     제공되면 내부적으로 search_company_tool를 호출하여 corp_code를 찾음
+                     여러 검색 결과가 나오면 상장기업 우선, 정확한 이름 일치 우선으로 선택
+        bsns_year: 사업연도 (YYYY 형식 문자열, 예: "2023", "2024")
+                  기본값: None (자동으로 최근 연도부터 시도)
+                  지정하지 않으면 최근 3년도 중 데이터가 있는 연도를 자동으로 찾음
+        reprt_code: 보고서 코드 (기본값: "11011")
+                   "11011": 사업보고서 (연간, 권장)
+                   "11013": 분기보고서 (분기)
     
     Returns:
-        재무제표 정보 (손익계산서, 재무상태표, 현금흐름표)
+        재무제표 정보 딕셔너리:
+        {
+            "corp_code": "기업 고유번호",
+            "bsns_year": "사업연도",
+            "reprt_code": "보고서 코드",
+            "financial_data": [
+                {
+                    "account_nm": "계정명",
+                    "thstrm_nm": "당기명",
+                    "thstrm_amount": "당기금액",
+                    ...
+                },
+                ...
+            ]
+        }
+        또는 {"error": "오류 메시지"} 형식
+    
+    사용 예시:
+        - company_name="삼성전자", bsns_year="2023" → 삼성전자 2023년 재무제표
+        - corp_code="00126380", bsns_year="2024" → 해당 기업 2024년 재무제표
+        - company_name="네이버" (bsns_year 없음) → 네이버 최근 연도 재무제표 자동 조회
     """
     req = FinancialStatementRequest(
         corp_code=corp_code,
@@ -532,15 +619,45 @@ async def get_public_disclosure_tool(
     """
     기업의 공시정보를 조회합니다.
     
+    기업이 공시한 주요사항보고서, 정기보고서 등의 공시 정보를 조회합니다.
+    
+    중요: corp_code는 필수 파라미터입니다. company_name만 있는 경우 먼저 search_company_tool를 호출하여 corp_code를 얻어야 합니다.
+    
     Args:
-        corp_code: 기업 고유번호
-        bgn_de: 시작일 (YYYYMMDD 형식, 기본값: 최근 1개월)
-        end_de: 종료일 (YYYYMMDD 형식, 기본값: 오늘)
-        page_no: 페이지 번호
-        page_count: 페이지당 건수
+        corp_code: 기업 고유번호 (필수, 8자리 문자열, 예: "00126380")
+                  company_name만 있는 경우: 먼저 search_company_tool로 검색하여 corp_code를 얻어야 함
+        bgn_de: 시작일 (YYYYMMDD 형식 문자열, 예: "20240101")
+               기본값: None (자동으로 최근 30일로 설정)
+               지정하지 않으면 오늘로부터 30일 전이 자동으로 설정됨
+        end_de: 종료일 (YYYYMMDD 형식 문자열, 예: "20241231")
+               기본값: None (자동으로 오늘 날짜로 설정)
+        page_no: 페이지 번호 (기본값: 1, 1부터 시작)
+        page_count: 페이지당 건수 (기본값: 10, 최대: 100)
     
     Returns:
-        공시정보 목록
+        공시정보 딕셔너리:
+        {
+            "corp_code": "기업 고유번호",
+            "total_count": 전체 공시 건수,
+            "page_no": 페이지 번호,
+            "page_count": 페이지당 건수,
+            "disclosures": [
+                {
+                    "rcept_no": "접수번호",
+                    "corp_cls": "법인구분",
+                    "corp_name": "회사명",
+                    "report_nm": "보고서명",
+                    "rcept_dt": "접수일자",
+                    ...
+                },
+                ...
+            ]
+        }
+        또는 {"error": "오류 메시지"} 형식
+    
+    사용 예시:
+        - corp_code="00126380", bgn_de="20240101", end_de="20241231" → 2024년 전체 공시
+        - corp_code="00126380" (날짜 없음) → 최근 30일 공시
     """
     req = PublicDisclosureRequest(
         corp_code=corp_code,
@@ -560,12 +677,37 @@ async def analyze_financial_trend_tool(
     """
     기업의 재무 추이를 분석합니다. (최근 N년)
     
+    여러 연도의 재무제표를 수집하여 재무 추이를 분석합니다.
+    각 연도별 재무 데이터를 반환하므로 AI가 추가 분석(성장률, 추세 등)을 수행할 수 있습니다.
+    
+    중요: corp_code는 필수 파라미터입니다. company_name만 있는 경우 먼저 search_company_tool를 호출하여 corp_code를 얻어야 합니다.
+    
     Args:
-        corp_code: 기업 고유번호
+        corp_code: 기업 고유번호 (필수, 8자리 문자열, 예: "00126380")
+                  company_name만 있는 경우: 먼저 search_company_tool로 검색하여 corp_code를 얻어야 함
         years: 분석할 연수 (기본값: 5, 최대: 10)
+              예: 5 → 최근 5년간의 재무제표 수집
+              현재 연도 기준으로 과거 N년간의 데이터를 수집
     
     Returns:
-        재무 추이 분석 결과 (최근 N년 재무제표 데이터)
+        재무 추이 분석 결과 딕셔너리:
+        {
+            "corp_code": "기업 고유번호",
+            "years_analyzed": 실제 수집된 연수,
+            "financial_trend": [
+                {
+                    "year": "연도 (예: '2023')",
+                    "data": [재무제표 데이터 배열]
+                },
+                ...
+            ],
+            "summary": "요약 메시지"
+        }
+        또는 {"error": "오류 메시지"} 형식
+    
+    사용 예시:
+        - corp_code="00126380", years=3 → 최근 3년간 재무 추이
+        - corp_code="00126380", years=10 → 최근 10년간 재무 추이 (최대)
     """
     req = FinancialTrendRequest(corp_code=corp_code, years=years)
     return await analyze_financial_trend_impl(req, None)
@@ -579,12 +721,39 @@ async def get_company_overview_tool(
     """
     기업의 기본정보를 조회합니다.
     
+    회사명, 대표자명, 설립일, 본사주소, 사업자등록번호 등 기업의 기본 정보를 조회합니다.
+    
+    중요: corp_code 또는 company_name 중 하나는 반드시 제공해야 합니다.
+    - corp_code가 제공되면: 바로 기본정보 조회
+    - company_name만 제공되면: 먼저 search_company_tool로 검색하여 corp_code를 찾은 후 조회
+    - 둘 다 제공되면: corp_code를 우선 사용
+    
     Args:
-        corp_code: 기업 고유번호 (corp_code 또는 company_name 중 하나 필수)
-        company_name: 회사명 (corp_code가 없을 경우 사용, 예: '삼성전자', '카카오')
+        corp_code: 기업 고유번호 (8자리 문자열, 예: "00126380")
+                  corp_code 또는 company_name 중 하나 필수
+                  company_name이 제공되면 이 값은 무시됨
+        company_name: 회사명 (예: "삼성전자", "네이버", "카카오")
+                     corp_code가 없을 때 사용
+                     제공되면 내부적으로 search_company_tool를 호출하여 corp_code를 찾음
+                     여러 검색 결과가 나오면 상장기업을 우선 선택
     
     Returns:
-        기업 기본정보 (회사명, 대표자명, 설립일, 본사주소 등)
+        기업 기본정보 딕셔너리:
+        {
+            "corp_code": "기업 고유번호",
+            "company_info": {
+                "corp_name": "회사명",
+                "corp_cls": "법인구분",
+                "stock_code": "종목코드",
+                "modify_date": "수정일자",
+                ...
+            }
+        }
+        또는 {"error": "오류 메시지"} 형식
+    
+    사용 예시:
+        - company_name="삼성전자" → 삼성전자 기본정보 조회
+        - corp_code="00126380" → 해당 기업 기본정보 조회
     """
     req = CompanyOverviewRequest(
         corp_code=corp_code,
@@ -603,14 +772,49 @@ async def get_executives_tool(
     """
     기업의 임원정보를 조회합니다.
     
+    임원명, 직책, 보수 등 임원진 정보를 조회합니다.
+    
+    중요: corp_code 또는 company_name 중 하나는 반드시 제공해야 합니다.
+    - corp_code가 제공되면: 바로 임원정보 조회
+    - company_name만 제공되면: 먼저 search_company_tool로 검색하여 corp_code를 찾은 후 조회
+    - 둘 다 제공되면: corp_code를 우선 사용
+    
     Args:
-        corp_code: 기업 고유번호 (corp_code 또는 company_name 중 하나 필수)
-        company_name: 회사명 (corp_code가 없을 경우 사용, 예: '삼성전자', '카카오')
-        bsns_year: 사업연도 (YYYY 형식, 기본값: 최근 연도)
-        reprt_code: 보고서 코드 (11011: 사업보고서, 기본값: 11011)
+        corp_code: 기업 고유번호 (8자리 문자열, 예: "00126380")
+                  corp_code 또는 company_name 중 하나 필수
+                  company_name이 제공되면 이 값은 무시됨
+        company_name: 회사명 (예: "삼성전자", "네이버", "카카오")
+                     corp_code가 없을 때 사용
+                     제공되면 내부적으로 search_company_tool를 호출하여 corp_code를 찾음
+                     여러 검색 결과가 나오면 상장기업을 우선 선택
+        bsns_year: 사업연도 (YYYY 형식 문자열, 예: "2023", "2024")
+                  기본값: None (자동으로 최근 연도로 설정)
+                  지정하지 않으면 현재 월에 따라 자동 설정 (3월 이전이면 전년도)
+        reprt_code: 보고서 코드 (기본값: "11011")
+                   "11011": 사업보고서 (연간, 권장)
+                   "11013": 분기보고서 (분기)
     
     Returns:
-        임원정보 (임원명, 직책, 보수 등)
+        임원정보 딕셔너리:
+        {
+            "corp_code": "기업 고유번호",
+            "bsns_year": "사업연도",
+            "reprt_code": "보고서 코드",
+            "executives": [
+                {
+                    "nm": "임원명",
+                    "ofcps": "직책",
+                    "mendng_totamt": "보수총액",
+                    ...
+                },
+                ...
+            ]
+        }
+        또는 {"error": "오류 메시지"} 형식
+    
+    사용 예시:
+        - company_name="삼성전자", bsns_year="2023" → 삼성전자 2023년 임원정보
+        - corp_code="00126380" (bsns_year 없음) → 해당 기업 최근 연도 임원정보
     """
     req = ExecutivesRequest(
         corp_code=corp_code,
@@ -631,14 +835,50 @@ async def get_shareholders_tool(
     """
     지분보고서를 조회합니다.
     
+    주주명, 보유지분, 지분비율 등 지분구조 정보를 조회합니다.
+    
+    중요: corp_code 또는 company_name 중 하나는 반드시 제공해야 합니다.
+    - corp_code가 제공되면: 바로 지분보고서 조회
+    - company_name만 제공되면: 먼저 search_company_tool로 검색하여 corp_code를 찾은 후 조회
+    - 둘 다 제공되면: corp_code를 우선 사용
+    
     Args:
-        corp_code: 기업 고유번호 (corp_code 또는 company_name 중 하나 필수)
-        company_name: 회사명 (corp_code가 없을 경우 사용)
-        bsns_year: 사업연도 (YYYY 형식, 기본값: 최근 연도)
-        reprt_code: 보고서 코드 (11011: 사업보고서, 11013: 분기보고서)
+        corp_code: 기업 고유번호 (8자리 문자열, 예: "00126380")
+                  corp_code 또는 company_name 중 하나 필수
+                  company_name이 제공되면 이 값은 무시됨
+        company_name: 회사명 (예: "삼성전자", "네이버", "카카오")
+                     corp_code가 없을 때 사용
+                     제공되면 내부적으로 search_company_tool를 호출하여 corp_code를 찾음
+                     여러 검색 결과가 나오면 상장기업을 우선 선택
+        bsns_year: 사업연도 (YYYY 형식 문자열, 예: "2023", "2024")
+                  기본값: None (자동으로 전년도로 설정)
+                  지정하지 않으면 현재 연도 - 1년이 자동으로 설정됨
+        reprt_code: 보고서 코드 (기본값: "11011")
+                   "11011": 사업보고서 (연간, 권장)
+                   "11013": 분기보고서 (분기)
     
     Returns:
-        지분보고서 (주주명, 보유지분, 비율 등)
+        지분보고서 딕셔너리:
+        {
+            "corp_code": "기업 고유번호",
+            "bsns_year": "사업연도",
+            "reprt_code": "보고서 코드",
+            "shareholders": [
+                {
+                    "stock_knd": "주식종류",
+                    "nm": "주주명",
+                    "bsis_posesn_stock_co": "기초보유주식수",
+                    "bsis_posesn_stock_qota_rt": "기초보유지분율",
+                    ...
+                },
+                ...
+            ]
+        }
+        또는 {"error": "오류 메시지"} 형식
+    
+    사용 예시:
+        - company_name="삼성전자", bsns_year="2023" → 삼성전자 2023년 지분구조
+        - corp_code="00126380" (bsns_year 없음) → 해당 기업 전년도 지분구조
     """
     req = ShareholdersRequest(
         corp_code=corp_code,
