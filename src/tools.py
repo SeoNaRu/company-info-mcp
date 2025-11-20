@@ -77,24 +77,24 @@ def get_credentials(arguments: Optional[dict] = None) -> dict:
     return credentials
 
 
-def search_company(query: str, arguments: Optional[dict] = None) -> Dict:
+def search_company(company_name: str, arguments: Optional[dict] = None) -> Dict:
     """
     기업을 회사명으로 검색합니다. (DART API)
     DART의 corpCode.xml 파일을 사용하여 회사명으로 corp_code를 검색합니다.
     
     Args:
-        query: 검색할 회사명
+        company_name: 검색할 회사명
         arguments: 추가 인자
         
     Returns:
         검색 결과 딕셔너리
     """
-    logger.debug("search_company called | query=%r", query)
+    logger.debug("search_company called | company_name=%r", company_name)
     
     # 캐시 키 생성 (arguments 제외)
-    cache_key = (query,)
+    cache_key = (company_name,)
     if cache_key in company_cache:
-        logger.debug("Cache hit for company search | query=%r", query)
+        logger.debug("Cache hit for company search | company_name=%r", company_name)
         return company_cache[cache_key]
     
     credentials = get_credentials(arguments)
@@ -142,7 +142,7 @@ def search_company(query: str, arguments: Optional[dict] = None) -> Dict:
             
             # 회사명으로 검색 (부분 일치)
             matching_companies = []
-            query_lower = query.lower()
+            company_name_lower = company_name.lower()
             
             # XML 구조에 따라 요소 찾기 (list 또는 다른 루트 요소)
             companies = root.findall(".//list") or root.findall("list")
@@ -154,7 +154,7 @@ def search_company(query: str, arguments: Optional[dict] = None) -> Dict:
                 modify_date = company.findtext("modify_date", "")
                 
                 # 회사명에 검색어가 포함되어 있는지 확인
-                if corp_name and query_lower in corp_name.lower():
+                if corp_name and company_name_lower in corp_name.lower():
                     matching_companies.append({
                         "corp_code": corp_code,
                         "corp_name": corp_name,
@@ -167,7 +167,7 @@ def search_company(query: str, arguments: Optional[dict] = None) -> Dict:
                 "companies": matching_companies
             }
             
-            logger.debug("Company search results | query=%r total=%d", query, len(matching_companies))
+            logger.debug("Company search results | company_name=%r total=%d", company_name, len(matching_companies))
             
             # 캐시에 저장
             company_cache[cache_key] = result
