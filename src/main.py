@@ -41,7 +41,7 @@ mcp = FastMCP()
 
 # Pydantic 모델 정의
 class CompanySearchRequest(BaseModel):
-    query: str = Field(..., description="검색할 회사명")
+    company_name: str = Field(..., description="검색할 회사명")
 
 
 class FinancialStatementRequest(BaseModel):
@@ -89,7 +89,7 @@ async def search_company_impl(req: CompanySearchRequest, arguments: Optional[dic
     try:
         if arguments is None:
             arguments = {}
-        return await asyncio.to_thread(search_company, req.query, arguments)
+        return await asyncio.to_thread(search_company, req.company_name, arguments)
     except Exception as e:
         return {"error": f"기업 검색 중 오류가 발생했습니다: {str(e)}"}
 
@@ -274,9 +274,9 @@ async def get_tools_http():
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "query": {"type": "string", "description": "검색할 회사명"}
+                            "company_name": {"type": "string", "description": "검색할 회사명"}
                         },
-                        "required": ["query"]
+                        "required": ["company_name"]
                     }
                 },
                 {
@@ -395,11 +395,11 @@ async def call_tool_http(tool_name: str, request_data: dict):
             return await health_impl()
 
         if tool_name == "search_company_tool":
-            query = request_data.get("query")
-            if not query:
-                return {"error": "Missing required parameter: query"}
+            company_name = request_data.get("company_name")
+            if not company_name:
+                return {"error": "Missing required parameter: company_name"}
             return await run_with_env(
-                run_sync(search_company, query, arguments=request_data)
+                run_sync(search_company, company_name, arguments=request_data)
             )
 
         if tool_name == "get_financial_statement_tool":
@@ -479,17 +479,17 @@ async def health():
 
 
 @mcp.tool()
-async def search_company_tool(query: str):
+async def search_company_tool(company_name: str):
     """
     기업을 회사명으로 검색합니다.
     
     Args:
-        query: 검색할 회사명 (예: '삼성전자', '네이버')
+        company_name: 검색할 회사명 (예: '삼성전자', '네이버')
     
     Returns:
         검색된 기업 목록 (기업 고유번호 포함)
     """
-    req = CompanySearchRequest(query=query)
+    req = CompanySearchRequest(company_name=company_name)
     return await search_company_impl(req, None)
 
 
